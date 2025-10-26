@@ -40,20 +40,27 @@ class ImageTopo(Topo):
         self.addLink(s2, s3, bw=100, delay='8ms')
         self.addLink(s3, s4, bw=100, delay='10ms')
 
+
 if __name__ == '__main__':
     setLogLevel('info')
     
+    print("*** Creating network topology...\n")
     topo = ImageTopo()
     
     net = Mininet(topo=topo,
                   link=TCLink,
                   controller=None) 
     
+    print("\n*** Starting network...\n")
     net.start()
-    
-    print("Starting Mininet CLI...")
-    print("Your topology is running!")
+    print("*** Your topology is running!\n")
+
+    print("*** Testing connectivity by pinging all hosts...")
+    net.pingAll()
+    print("*** Network is ready\n")
+
+    print('*** Dropping to CLI (type exit to stop)')
     CLI(net)
-    
-    print("Stopping network...")
+
+    print("*** Stopping network...\n")
     net.stop()
