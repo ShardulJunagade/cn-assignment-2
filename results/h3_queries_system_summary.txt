@@ -1,0 +1,7 @@
+--- Results for pcap_queries/h3_queries.txt ---
+Total Queries: 162
+Successful Resolutions: 72
+Failed Resolutions: 90
+Average Lookup Latency (ms): 66.05
+Average Throughput (queries/sec): 17.70
+Per-query results saved to: results/h3_queries_system_results.csv
