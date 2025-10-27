@@ -1,0 +1,8 @@
+Total Queries: 162
+Successful Resolutions: 72
+Failed Resolutions: 90
+Timeout Failures: 0
+Average Lookup Latency (ms): 214.46
+Average Throughput (queries/sec): 7.49
+Throughput (bps, from PCAP frame.len): 0.00
+Total Bytes (from PCAP frame.len): 11986

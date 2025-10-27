@@ -1,11 +1,34 @@
-echo "Extracting queries from PCAP_1_H1.pcap..."
-tshark -r pcaps/PCAP_1_H1.pcap -Y "dns.qry.type == 1" -T fields -e dns.qry.name > pcap_queries/h1_queries.txt
+#!/usr/bin/env bash
+set -euo pipefail
 
-echo "Extracting queries from PCAP_2_H2.pcap..."
-tshark -r pcaps/PCAP_2_H2.pcap -Y "dns.qry.type == 1" -T fields -e dns.qry.name > pcap_queries/h2_queries.txt
+# Extract DNS query CSVs from all 4 PCAPs into pcap_queries/*.csv
 
-echo "Extracting queries from PCAP_3_H3.pcap..."
-tshark -r pcaps/PCAP_3_H3.pcap -Y "dns.qry.type == 1" -T fields -e dns.qry.name > pcap_queries/h3_queries.txt
+if ! command -v tshark &> /dev/null; then
+  echo "tshark could not be found. Please install Wireshark/tshark and try again."
+  exit 1
+fi
 
-echo "Extracting queries from PCAP_4_H4.pcap..."
-tshark -r pcaps/PCAP_4_H4.pcap -Y "dns.qry.type == 1" -T fields -e dns.qry.name > pcap_queries/h4_queries.txt
+ROOT_DIR=$(pwd)
+PCAP_DIR="${ROOT_DIR}/pcaps"
+OUT_DIR="${ROOT_DIR}/pcap_queries"
+mkdir -p "${OUT_DIR}"
+
+extract() {
+  local in_file=$1
+  local out_file=$2
+  echo "Extracting from ${in_file} -> ${out_file}"
+  tshark -r "${in_file}" -Y 'dns.flags.response == 0' \
+    -T fields \
+    -e frame.time_relative \
+    -e dns.qry.name \
+    -e dns.flags.recdesired \
+    -e frame.len \
+    -E header=y -E separator=, -E quote=d -E occurrence=f > "${out_file}"
+}
+
+extract "${PCAP_DIR}/PCAP_1_H1.pcap" "${OUT_DIR}/h1_queries.csv"
+extract "${PCAP_DIR}/PCAP_2_H2.pcap" "${OUT_DIR}/h2_queries.csv"
+extract "${PCAP_DIR}/PCAP_3_H3.pcap" "${OUT_DIR}/h3_queries.csv"
+extract "${PCAP_DIR}/PCAP_4_H4.pcap" "${OUT_DIR}/h4_queries.csv"
+
+echo "Done. Files written to ${OUT_DIR}"

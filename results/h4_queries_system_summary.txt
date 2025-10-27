@@ -1,7 +1,0 @@
---- Results for pcap_queries/h4_queries.txt ---
-Total Queries: 162
-Successful Resolutions: 77
-Failed Resolutions: 85
-Average Lookup Latency (ms): 66.42
-Average Throughput (queries/sec): 20.30
-Per-query results saved to: results/h4_queries_system_results.csv
