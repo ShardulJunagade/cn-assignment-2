@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import csv
 from typing import List, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
@@ -12,7 +13,26 @@ import pandas as pd
 
 
 def load_query_sequence(path: Path, limit: int) -> List[str]:
+    """Load first N domains from a plain text list or tshark CSV.
+
+    - Plain text: one domain per line, comments with '#'
+    - CSV: must contain a 'dns.qry.name' header column
+    """
     domains: List[str] = []
+    # Peek the first line for header detection
+    first_line = path.read_text().splitlines()[0] if path.exists() else ""
+    if "dns.qry.name" in first_line:
+        with path.open(newline="") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                name = (row.get("dns.qry.name") or "").strip()
+                if not name:
+                    continue
+                domains.append(name)
+                if len(domains) >= limit:
+                    break
+        return domains
+
     with path.open() as handle:
         for line in handle:
             stripped = line.strip()

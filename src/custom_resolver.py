@@ -21,6 +21,7 @@ import dns.query
 import dns.rcode
 import dns.rdatatype
 import dns.resolver
+from ipaddress import ip_address
 
 ROOT_SERVERS: Tuple[str, ...] = (
     "198.41.0.4",
@@ -136,6 +137,28 @@ class ResolverServer:
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._shutdown = threading.Event()
 
+    # --- Helper for safe upstream resolvers ---------------------------
+    def _safe_system_nameservers(self) -> Sequence[str]:
+        """Return non-loopback, non-unspecified nameservers with sensible fallback.
+
+        Inside Mininet namespaces, 127.0.0.53 is not reachable; prefer public resolvers if needed.
+        """
+        resolver = dns.resolver.Resolver(configure=True)
+        candidates = list(resolver.nameservers) if resolver.nameservers else []
+        usable: List[str] = []
+        for ns in candidates:
+            try:
+                ip = ip_address(ns)
+                if ip.is_loopback or ip.is_unspecified:
+                    continue
+                usable.append(ns)
+            except ValueError:
+                # Not an IP literal; skip
+                continue
+        if not usable:
+            usable = ["8.8.8.8", "1.1.1.1"]
+        return tuple(usable)
+
     # --- Cache helpers -------------------------------------------------
     def _cache_key(self, qname: str, qtype: int) -> Tuple[str, int]:
         return qname.lower(), qtype
@@ -148,7 +171,16 @@ class ResolverServer:
                 return None
             if entry.fresh():
                 # Return shallow copies so TTL counters remain intact.
-                return [rrset.copy() for rrset in entry.rrsets]
+                copies: List[dns.rrset.RRset] = []
+                for rrset in entry.rrsets:
+                    if hasattr(rrset, "copy"):
+                        try:
+                            copies.append(rrset.copy())
+                            continue
+                        except Exception:
+                            pass
+                    copies.append(rrset)
+                return copies
             self._cache.pop(key, None)
             return None
 
@@ -157,7 +189,10 @@ class ResolverServer:
             return
         ttl_values: List[int] = []
         for rrset in rrsets:
-            ttl_values.extend(rr.ttl for rr in rrset)
+            # TTL is a property of the RRset, not individual RDATA items.
+            ttl = getattr(rrset, "ttl", None)
+            if isinstance(ttl, (int, float)):
+                ttl_values.append(int(ttl))
         if not ttl_values:
             return
         ttl = min(ttl_values)
@@ -166,7 +201,16 @@ class ResolverServer:
         expiry = time.time() + ttl
         key = self._cache_key(qname, qtype)
         with self._cache_lock:
-            self._cache[key] = CacheEntry([rrset.copy() for rrset in rrsets], expiry)
+            stored: List[dns.rrset.RRset] = []
+            for rrset in rrsets:
+                if hasattr(rrset, "copy"):
+                    try:
+                        stored.append(rrset.copy())
+                        continue
+                    except Exception:
+                        pass
+                stored.append(rrset)
+            self._cache[key] = CacheEntry(stored, expiry)
 
     # --- Resolution pipeline -------------------------------------------
     def _query_server(
@@ -226,6 +270,9 @@ class ResolverServer:
     def _resolve_ns_addresses(self, ns_names: Iterable[str]) -> List[str]:
         resolver = dns.resolver.Resolver(configure=True)
         resolver.lifetime = self.timeout
+        safe_ns = self._safe_system_nameservers()
+        if safe_ns:
+            resolver.nameservers = list(safe_ns)
         ips: List[str] = []
         for ns_name in ns_names:
             try:
@@ -239,6 +286,54 @@ class ResolverServer:
                     address = getattr(rr, "address", rr.to_text())
                     ips.append(address)
         return ips
+
+    def _recursive_lookup(self, qname: str, qtype: int) -> Tuple[List[dns.rrset.RRset], int, List[TraceEvent]]:
+        """Perform a recursive resolution using the system resolvers (public if needed)."""
+        resolver = dns.resolver.Resolver(configure=True)
+        resolver.lifetime = self.timeout
+        safe_ns = self._safe_system_nameservers()
+        if safe_ns:
+            resolver.nameservers = list(safe_ns)
+
+        trace: List[TraceEvent] = []
+        start = time.perf_counter()
+        try:
+            # raise_on_no_answer=False so we can inspect response even if empty
+            answer = resolver.resolve(qname, rdtype=qtype, raise_on_no_answer=False)
+            response = answer.response
+            rcode = response.rcode()
+            total = time.perf_counter() - start
+            # We don't have per-hop RTT in this mode; log a single event
+            server_logged = resolver.nameservers[0] if resolver.nameservers else "SYSTEM"
+            summary = "ANSWER" if response.answer else dns.rcode.to_text(rcode)
+            trace.append(
+                TraceEvent(
+                    server=server_logged,
+                    step="Recursive",
+                    response=summary,
+                    rtt=total,
+                    total_time=total,
+                    cache_status="MISS",
+                    event_time=time.time(),
+                )
+            )
+            return list(response.answer), rcode, trace
+        except (dns.exception.Timeout, dns.resolver.NXDOMAIN):
+            total = time.perf_counter() - start
+            server_logged = resolver.nameservers[0] if resolver.nameservers else "SYSTEM"
+            trace.append(
+                TraceEvent(
+                    server=server_logged,
+                    step="Recursive",
+                    response="TIMEOUT_OR_NXDOMAIN",
+                    rtt=total,
+                    total_time=total,
+                    cache_status="MISS",
+                    event_time=time.time(),
+                )
+            )
+            # If NXDOMAIN, return NXDOMAIN; on timeout, return SERVFAIL
+            return [], dns.rcode.NXDOMAIN, trace
 
     def _iterative_lookup(
         self,
@@ -313,6 +408,13 @@ class ResolverServer:
             )
             return cached, dns.rcode.NOERROR, [event], True
 
+        # If recursion is requested, try recursive resolution first.
+        if recursion_requested:
+            answers, rcode, trace = self._recursive_lookup(qname, qtype)
+            if answers and rcode == dns.rcode.NOERROR:
+                self._cache_store(qname, qtype, answers)
+                return answers, rcode, trace, False
+            # fall back to iterative if recursive attempt didn't yield an answer
         answers, rcode, trace = self._iterative_lookup(qname, qtype, recursion_requested)
         if answers and rcode == dns.rcode.NOERROR:
             self._cache_store(qname, qtype, answers)

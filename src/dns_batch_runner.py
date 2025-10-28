@@ -129,6 +129,8 @@ def perform_query(
             for rrset in response.answer:
                 if rrset.rdtype == dns.rdatatype.A:
                     answers.extend(getattr(rdata, "address", rdata.to_text()) for rdata in rrset)
+                elif rrset.rdtype == dns.rdatatype.AAAA:
+                    answers.extend(getattr(rdata, "address", rdata.to_text()) for rdata in rrset)
                 else:
                     answers.append(rrset.to_text())
             return status, elapsed_ms, answers, server
