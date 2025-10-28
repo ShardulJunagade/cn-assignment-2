@@ -1,6 +1,0 @@
-Total Queries: 162
-Successful Resolutions: 55
-Failed Resolutions: 107
-Timeout Failures: 36
-Average Lookup Latency (ms): 610.69
-Average Throughput (queries/sec): 1.31
