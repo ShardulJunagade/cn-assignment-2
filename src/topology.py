@@ -60,6 +60,7 @@ def main() -> None:
     parser.add_argument("--nat-switch", default="s2", help="switch that connects to the NAT (default: s2)")
     parser.add_argument("--gateway-ip", default="10.0.0.254", help="gateway IP exposed by the NAT")
     args = parser.parse_args()
+    args.with_nat = True  # Always enable NAT for this version
 
     setLogLevel("info")
     cleanup()

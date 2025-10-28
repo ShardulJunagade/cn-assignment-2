@@ -17,7 +17,7 @@ extract() {
   local in_file=$1
   local out_file=$2
   echo "Extracting from ${in_file} -> ${out_file}"
-  tshark -r "${in_file}" -Y 'dns.flags.response == 0' \
+  tshark -r "${in_file}" -Y 'udp.port == 53 && dns.flags.response == 0' \
     -T fields \
     -e frame.time_relative \
     -e dns.qry.name \

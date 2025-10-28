@@ -1,0 +1,7 @@
+Label,Total Queries,Success Count,Failure Count,Avg Latency (ms),Avg Throughput (qps),Total Bytes,Throughput (bps)
+h1_default.csv,100,0,100,0,17712.432,0,0.0
+h1_default.csv,100,71,29,139.719,5.432,5289.0,2298.592
+h2_default.csv,100,0,100,0,22692.766,0,0.0
+h2_default.csv,100,68,32,108.937,8.194,4939.0,3237.438
+h3_default.csv,100,72,28,103.561,8.604,5287.0,3639.259
+h4_default.csv,100,73,27,135.517,8.352,5440.0,3634.804
